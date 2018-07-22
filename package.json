@@ -1,0 +1,30 @@
+{
+  "name": "tb-pay-stripe",
+  "version": "1.0.0",
+  "description": "Stripe payment service to extend ToroBack functionality",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/toroback/tb-pay-stripe.git"
+  },
+  "keywords": [
+    "toroback",
+    "backend",
+    "pay",
+    "payment",
+    "stripe"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/toroback/tb-pay-stripe/issues"
+  },
+  "homepage": "https://github.com/toroback/tb-pay-stripe#readme",
+  "dependencies": {
+    "stripe": "^6.3.0",
+    "tb-pay": "^1.1.0"
+  }
+}
