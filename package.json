@@ -1,6 +1,6 @@
 {
   "name": "tb-pay-stripe",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Stripe payment service to extend ToroBack functionality",
   "main": "index.js",
   "scripts": {
