@@ -25,6 +25,6 @@
   "homepage": "https://github.com/toroback/tb-pay-stripe#readme",
   "dependencies": {
     "stripe": "^6.3.0",
-    "tb-pay": "^1.1.0"
+    "tb-pay": "^1.1.2"
   }
 }

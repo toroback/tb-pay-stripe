@@ -256,14 +256,17 @@ function ensureAccount( stripe, user, token ) {
           payAccount.data.expires = source.exp_month.toString( ).padStart( 2, '0') +
                                     source.exp_year.toString( ).slice(-2);
         }
+        switch ( source.tokenization_method ) { // TODO: these names should go into a definition
+          case 'apple_pay':   { payAccount.data.method = 'applePay'  } break;
+          case 'android_pay': { payAccount.data.method = 'googlePay' } break;
+        }
         return payAccount.save( );
       })
       .catch( err => {
-        error = err[1]; // assume it was not the db
+        error = err; // assume it was not the db
         if ( payAccount ) {
-          let source = err[1]; // .1 source
           payAccount.originalRequest = request;
-          payAccount.originalResponse = source;
+          payAccount.originalResponse = ( error.raw && error.raw.type ) ? error.raw : error;  // stripe error on api call
           payAccount.status = 'rejected';
         }
         return payAccount ? payAccount.save( ) : undefined;
