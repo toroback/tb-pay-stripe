@@ -56,8 +56,9 @@ class Adapter {
         .then( resp => {
           let ret = { data: resp, balance: { } };
           if ( resp.available && resp.available.length ) {
-            ret.balance.amount = resp.available[0].amount;
-            ret.balance.currency = resp.available[0].currency.toUpperCase( );
+            let available = resp.available[0];
+            ret.balance.amount = fromStripeAmount( available.amount, available.currency );
+            ret.balance.currency = available.currency.toUpperCase( );
           }
           return ret;
         })
@@ -291,6 +292,20 @@ function toStripeAmount( amount, currency ) {
     // TODO: get a list of smallest units by currency. it's usually 100
   }
   return Math.round( ret );  // make it integer... although value is supposed to be integer already
+}
+
+// returns the amount as a regular number, from Stripe format, according to the currency
+function fromStripeAmount( amount, currency ) {
+  // TODO: needs currency and amount validation more precisely
+  // https://stripe.com/docs/currencies#zero-decimal
+  let ret = amount;  // original amount
+  let cur = currency.toUpperCase( );
+  if ( !zeroDecimalCurrencies.find( e => e == cur ) ) {
+    // divide by the smallest unit... which we don't have!
+    ret = Math.round( ( (ret/100) + Number.EPSILON) * 100 ) / 100; // make sure it shows as a 2 decimal number
+    // TODO: get a list of smallest units by currency. it's usually 100
+  }
+  return ret;
 }
 
 // checks whether target object (dts) exists and is empty ( { } )
