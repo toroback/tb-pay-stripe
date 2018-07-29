@@ -52,7 +52,7 @@ class Adapter {
   getBalance ( ) {
     return new Promise( ( resolve, reject ) => {
       this.log.trace('getBalance');
-      this.stripe.balance.retrieve( )
+      retrieveBalance( this.stripe )
         .then( resp => {
           let ret = { data: resp, balance: { } };
           if ( resp.available && resp.available.length ) {
@@ -118,7 +118,7 @@ class Adapter {
         })
         .then( charge => {
           ret.request = request;
-          ret.response = charge;
+          ret.response = cleanUpObject( charge );
           ret.sTransId = charge.id;
           ret.data = { }; // useful data to keep in transaction
           if ( chargeData.customerId ) ret.data.sUserId = chargeData.customerId;  // just for it not to store as null in db (mixed type)
@@ -128,7 +128,7 @@ class Adapter {
         .catch( err => {
           if ( err.raw && err.raw.type ) { // stripe error on api call
             ret.request = request;
-            ret.response = err.raw;
+            ret.response = cleanUpObject( err.raw );
             ret.error = err;
           } else {
             ret = err;
@@ -139,6 +139,17 @@ class Adapter {
   }
 }
 
+// retrieves balance from our own stripe account
+// returns: promise with original balance data from stripe
+function retrieveBalance ( stripe ) {
+  return new Promise( ( resolve, reject ) => {
+    stripe.balance.retrieve( )
+      .then( resolve )
+      .catch( err => reject( stripeError( err ) ) );
+  });
+}
+
+
 // creates a new customer. if token is passed, it is attached as a source
 // stripe: stripe client instance
 // data: { }
@@ -147,16 +158,21 @@ class Adapter {
 // request: (optional) (out data) pass an empty object { } to receive back the original request made to the API
 // returns: a promise with the reply from customer.create API
 function createCustomer ( stripe, data, request ) {
-  let req = {
-    description: data.user.firstName + ' ' + data.user.lastName,
-    email: data.user.email.login,
-    source: data.token,
-    metadata: {
-      uid: data.user._id.toString( )
-    }
-  };
-  assignToEmptyObject( request, req );
-  return stripe.customers.create( req );
+  return new Promise( ( resolve, reject ) => {
+    let req = {
+      description: data.user.firstName + ' ' + data.user.lastName,
+      email: data.user.email.login,
+      source: data.token,
+      metadata: {
+        uid: data.user._id.toString( )
+      }
+    };
+    if ( request ) Object.assign( request, cleanUpObject( req ) );
+
+    stripe.customers.create( req )
+      .then( resolve )
+      .catch( err => reject( stripeError( err ) ) );
+  });
 }
 
 // creates a new customer source, and adds it to the customer
@@ -168,12 +184,17 @@ function createCustomer ( stripe, data, request ) {
 // request: (optional) (out data) pass an empty object { } to receive back the original request made to the API
 // returns: a promise with the reply from customer.createSource API
 function createCustomerSource ( stripe, data, request ) {
-  let req = { source: data.token };
-  if ( data.payAccount ) {
-    req.metadata = { paid: data.payAccount._id.toString( ) };
-  }
-  assignToEmptyObject( request, req );
-  return stripe.customers.createSource( data.customerId, req );
+  return new Promise( ( resolve, reject ) => {
+    let req = { source: data.token };
+    if ( data.payAccount ) {
+      req.metadata = { paid: data.payAccount._id.toString( ) };
+    }
+    if ( request ) Object.assign( request, cleanUpObject( req ) );
+
+    stripe.customers.createSource( data.customerId, req )
+      .then( resolve )
+      .catch( err => reject( stripeError( err ) ) );
+  });
 }
 
 // makes a new charge to a customer source
@@ -192,19 +213,24 @@ function createCustomerSource ( stripe, data, request ) {
 // request: (optional) (out data) pass an empty object { } to receive back the original request made to the API
 // returns: a promise with the reply from charges.create API
 function createCharge ( stripe, data, request ) {
-  let req = { // request
-    amount: toStripeAmount( data.amount, data.currency ),
-    currency: data.currency.toLowerCase( ),  // as required by stripe
-    customer: data.customerId,  // if any
-    source: data.source,
-    description: data.description,
-    statement_descriptor: data.statementDescription ? data.statementDescription.slice(0, 22) : undefined,
-    metadata: {
-      ptid: data.ptid.toString( )   // pay transaction _id
-    }
-  };
-  assignToEmptyObject( request, req );
-  return stripe.charges.create( req );
+  return new Promise( ( resolve, reject ) => {
+    let req = { // request
+      amount: toStripeAmount( data.amount, data.currency ),
+      currency: data.currency.toLowerCase( ),  // as required by stripe
+      customer: data.customerId,  // if any
+      source: data.source,
+      description: data.description,
+      statement_descriptor: data.statementDescription ? data.statementDescription.slice(0, 22) : undefined,
+      metadata: {
+        ptid: data.ptid.toString( )   // pay transaction _id
+      }
+    };
+    if ( request ) Object.assign( request, cleanUpObject( req ) );
+
+    stripe.charges.create( req )
+      .then( resolve )
+      .catch( err => { reject( stripeError( err ) ) });
+  });
 }
 
 // creates a stripe account for this user. also creates a stripe customer if it doesn't exist already
@@ -244,7 +270,7 @@ function ensureAccount( stripe, user, token ) {
       .then( resp => {
         let source = resp[1]; // .1 source
         payAccount.originalRequest = request;
-        payAccount.originalResponse = source;
+        payAccount.originalResponse = cleanUpObject( source );
         payAccount.status = 'approved';
         payAccount.sUserId = customerId;
         payAccount.sAccountId = source.id;
@@ -264,10 +290,10 @@ function ensureAccount( stripe, user, token ) {
         return payAccount.save( );
       })
       .catch( err => {
-        error = err; // assume it was not the db
+        error = err; // assume it was not the db  :-/
         if ( payAccount ) {
           payAccount.originalRequest = request;
-          payAccount.originalResponse = ( error.raw && error.raw.type ) ? error.raw : error;  // stripe error on api call
+          payAccount.originalResponse = error.raw ? cleanUpObject( error.raw ) : error;  // stripe error on api call
           payAccount.status = 'rejected';
         }
         return payAccount ? payAccount.save( ) : undefined;
@@ -308,18 +334,28 @@ function fromStripeAmount( amount, currency ) {
   return ret;
 }
 
-// checks whether target object (dts) exists and is empty ( { } )
-// then assigns properties from source object (src)
-function assignToEmptyObject( dst, src ) {
-  if ( dst && Object.keys(dst).length === 0 && dst.constructor === Object ) {
-    Object.assign( dst, src );
-    // undefined properties are kept in database as null because of mongoose mixed type. remove them:
-    for ( key in dst ) {
-      if ( dst[key] === undefined ) {
-        delete dst[key];
+// returns a standard toroback error according to the stripe error
+function stripeError( err ) {
+  return new App.err( err, { statusCode: err.statusCode } ); // it should take it without the need of options  :-/
+}
+
+// deletes null or undefined existing properties from src, returns cleaned up object
+// ( useful to not store undefined properties in DB as null, for mongoose types: mixed )
+// return: object with properties assigned (cleaned up in 1st and 2nd level only)
+function cleanUpObject( src ) {
+  let ret = { };
+  Object.assign( ret, src );
+  // undefined properties are kept in database as null because of mongoose mixed type. remove them:
+  // this should be recursive to clean up all levels... do some day...
+  for ( key in ret ) {
+    if ( ret[key] === undefined || ret[key] === null ) delete ret[key];
+    else if ( typeof ret[key] === 'object' ) {
+      for ( k in ret[key] ) {
+        if ( ret[key][k] === undefined || ret[key][k] === null ) delete ret[key][k];
       }
     }
   }
+  return ret;
 }
 
 module.exports = Adapter;
